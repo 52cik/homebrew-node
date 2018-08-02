@@ -1,137 +1,111 @@
 const fs = require('fs');
-const path = require('path');
+const { join } = require('path');
 const https = require('https');
 
-// node 版本hash文件
-const versions = {
-  node4: {
-    file: 'node4.rb',
-    url: 'https://npm.taobao.org/mirrors/node/latest-v4.x/SHASUMS256.txt',
-  },
-  node6: {
-    file: 'node6.rb',
-    url: 'https://npm.taobao.org/mirrors/node/latest-v6.x/SHASUMS256.txt',
-  },
-  node7: {
-    file: 'node7.rb',
-    url: 'https://npm.taobao.org/mirrors/node/latest-v7.x/SHASUMS256.txt',
-  },
-  node8: {
-    file: 'node8.rb',
-    url: 'https://npm.taobao.org/mirrors/node/latest-v8.x/SHASUMS256.txt',
-  },
-  node9: {
-    file: 'node9.rb',
-    url: 'https://npm.taobao.org/mirrors/node/latest-v9.x/SHASUMS256.txt',
-  },
-  node10: {
-    file: 'node10.rb',
-    url: 'https://npm.taobao.org/mirrors/node/latest-v10.x/SHASUMS256.txt',
-  },
-};
+// node 版本
+const versions = '4 5 6 7 8 9 10'.split(' ');
+// 镜像地址
+const host = 'https://npm.taobao.org/mirrors/node';
+// node个版本的哈希表
+const mirrors = versions.reduce((res, v) => {
+  res[v] = `${host}/latest-v${v}.x/SHASUMS256.txt`;
+  return res;
+}, {});
 
-// 匹配线上版本 hash 值
-const RE_ONLINE = /\b(\w{64})\s+node-v([\d.]+)\.pkg/m;
-// 匹配本地版本 hash 值
-const RE_LOCAL = /version\s+['"]([\d.]+)['"][\s\r\n]+sha256\s+['"](\w{64})['"]/;
-
+// 匹配哈希表中的 pkg 哈希值 和 版本号
+const reHash = /^(\w{64})\s+node-v([\d.]+)\.pkg$/m;
+// 本地 script 脚本中的 版本号 和 哈希值
+const reScript = /version '([^']+)'/;
 
 /**
- * 抓取页面
- *
- * @param {String} url
- * @returns {Promise}
+ * 请求方法
+ * @param {string} url 地址
+ * @return {Promise<string>}
  */
-function getUrl(url) {
+function fetch(url) {
   return new Promise((resolve, reject) => {
-    https.get(url, (res) => {
-      if (res.statusCode !== 200) {
-        reject(new Error(`Request Failed.\nStatus Code: ${res.statusCode}`));
-        res.resume();
-      } else {
-        let rawData = '';
-        res.setEncoding('utf8');
-        res.on('data', chunk => (rawData += chunk));
-        res.on('end', () => resolve(rawData));
-      }
-    }).on('error', reject);
+    https
+      .get(url, res => {
+        if (res.statusCode !== 200) {
+          reject(new Error(`Request Failed.\nStatus Code: ${res.statusCode}`));
+          res.resume();
+        } else {
+          let rawData = '';
+          res.setEncoding('utf8');
+          res.on('data', chunk => (rawData += chunk));
+          res.on('end', () => resolve(rawData));
+        }
+      })
+      .on('error', reject);
   });
 }
 
-
 /**
- * 加载文件
- *
- * @param {String} file
- * @returns {String}
+ * 脚本路径
+ * @param {string} ver 大版本号
+ * @return {string}
  */
-function getFile(file) {
-  return fs.readFileSync(path.join(__dirname, '..', 'Casks', file), 'utf8');
+function scriptPath(ver) {
+  return join(__dirname, '..', 'Casks', `node${ver}.rb`);
 }
 
 /**
- * 写入文件
- *
- * @param {String} file
- * @param {String} data
- * @returns {String}
+ * 获取本地脚本中的版本
+ * @param {string} ver 大版本号
+ * @return {string}
  */
-function putFile(file, data) {
-  return fs.writeFileSync(path.join(__dirname, '..', 'Casks', file), data, 'utf8');
+function getScriptVersion(ver) {
+  const str = fs.readFileSync(scriptPath(ver), 'utf8');
+  return (str.match(reScript) || 0)[1];
 }
 
+/**
+ * 写入本地脚本中的版本
+ * @param {string} ver 大版本号
+ */
+function setScriptVersion(ver, { version, hash }) {
+  const path = scriptPath(ver); // 本地路径
+  const str = fs
+    .readFileSync(path, 'utf8')
+    .replace(/version '([^']+)'/, `version '${version}'`)
+    .replace(/sha256 '([^']+)'/, `sha256 '${hash}'`);
+  fs.writeFileSync(path, str, 'utf8');
+}
 
-// 遍历更新版本
-Object.keys(versions).forEach((ver) => {
-  getUrl(versions[ver].url)
-    .then((data) => { // 抓取线上版本
-      const m = data.match(RE_ONLINE);
+/**
+ * 更新版本
+ * @param {string} ver 大版本号
+ * @return {Promise<string>}
+ */
+async function update(ver) {
+  const SHASUMS256 = await fetch(mirrors[ver]);
+  const m = (SHASUMS256 || '').match(reHash);
 
-      if (m === null) {
-        return Promise.reject(Error(`${ver} 线上版本信息抓取失败！`));
-      }
+  if (!m) {
+    throw Error(`SHASUMS256 not found.`);
+  }
 
-      // 线上版本
-      return {
-        version: m[2], // 最新版本号
-        SHASUMS256: m[1], // 哈希值
-      };
-    })
-    .then((online) => { // 抓取本地版本
-      const content = getFile(versions[ver].file);
-      const m = content.match(RE_LOCAL);
+  const [, hash, version] = m; // 获取版本
+  const localVersion = getScriptVersion(ver); // 本地版本
 
-      if (m === null) {
-        return Promise.reject(Error(`${ver} 本地文件信息匹配失败！`));
-      }
+  if (version === localVersion) {
+    return 'done.';
+  }
 
-      // 本地版本
-      return {
-        online,
-        local: {
-          content,
-          version: m[1],
-          SHASUMS256: m[2],
-        },
-      };
-    })
-    .then((data) => { // 更新版本
-      if (data.online.version === data.local.version) { // 版本一致则忽略
-        return false;
-      }
+  setScriptVersion(ver, { version, hash }); // 更本地文件版本
+  return `update to ${version}.`;
+}
 
-      const content = data.local.content
-        .replace(/version\s+['"]([\d.]+)['"]/, `version '${data.online.version}'`)
-        .replace(/sha256\s+['"](\w{64})['"]/, `sha256 '${data.online.SHASUMS256}'`);
-
-      putFile(versions[ver].file, content);
-      return true;
-    })
-  .then((isUpdate) => {
-    console.log(ver, isUpdate ? 'updated!' : 'done!');
-  })
-  .catch((err) => {
-    console.log('Error:', err.message);
+// run
+(async () => {
+  const tasks = versions.map(ver => {
+    return update(ver)
+      .then(message => {
+        console.log(`node${ver} ${message}`);
+      })
+      .catch(err => {
+        console.error(`node${ver} - ${err.message}`);
+      });
   });
-});
-
+  await Promise.all(tasks);
+})();

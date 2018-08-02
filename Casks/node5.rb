@@ -5,7 +5,6 @@ cask 'node5' do
   url "http://npm.taobao.org/mirrors/node/v#{version}/node-v#{version}.pkg"
   name 'Node.js'
   homepage 'https://nodejs.org/'
-  # license :mit
 
   pkg "node-v#{version}.pkg"
 

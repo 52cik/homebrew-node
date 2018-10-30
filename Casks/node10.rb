@@ -1,6 +1,6 @@
 cask 'node10' do
-  version '10.12.0'
-  sha256 'a22893b99cef0dd8718dc471d0a54b768f5c5da0135f004d0d222b186b237ba3'
+  version '10.13.0'
+  sha256 '4246d8ceafe3c5f8b3a5012b2fccc030e788a263d71eb83620397f25e001fc59'
 
   # https://npm.taobao.org/mirrors/node/latest-v10.x/SHASUMS256.txt
 

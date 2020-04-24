@@ -3,7 +3,7 @@ const { join } = require('path');
 const https = require('https');
 
 // node 版本
-const versions = '6 8 10 12 13'.split(' ');
+const versions = '6 8 10 12 13 14'.split(' ');
 // 镜像地址
 const host = 'https://npm.taobao.org/mirrors/node';
 // node个版本的哈希表

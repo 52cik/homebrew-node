@@ -1,6 +1,6 @@
 cask 'node@12' do
-  version '12.18.1'
-  sha256 '18426243bc47411865b79e8945b6e07ae42ece0afcd6723014045f398602c4d1'
+  version '12.18.2'
+  sha256 'b406065c4fc99363d24ee63128511a57130e3049fb00f015a828bb28e835e8f0'
   # https://npm.taobao.org/mirrors/node/latest-v12.x/SHASUMS256.txt
 
   url "https://cdn.npm.taobao.org/dist/node/v#{version}/node-v#{version}.pkg"
